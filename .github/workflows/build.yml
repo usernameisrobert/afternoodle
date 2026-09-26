@@ -4,7 +4,11 @@ name: build
 #   linux-x64     ubuntu-latest
 #   windows-x64   windows-latest
 #   macos-arm64   macos-14 (Apple Silicon)
-# Android arm64 is built separately and is not released yet; see scripts/android.
+#   android-arm64 ubuntu-latest with the NDK; an installable APK
+#
+# Every platform builds and runs the engine's check suite. The APK additionally
+# links SDL2 statically, because Termux's SDL2 depends on X11 and Wayland
+# libraries that do not exist in an ordinary Android app.
 
 on:
   push:
@@ -15,6 +19,10 @@ on:
 
 permissions:
   contents: read
+
+env:
+  # Pinned so the cached Android SDL prefix stays valid between runs.
+  ANDROID_NDK_VERSION: 27.0.12077973
 
 jobs:
   build:
@@ -115,28 +123,108 @@ jobs:
           if-no-files-found: error
           retention-days: 30
 
+  android:
+    name: android-arm64
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up the Android SDK and NDK
+        uses: android-actions/setup-android@v3
+        with:
+          packages: 'ndk;${{ env.ANDROID_NDK_VERSION }}'
+          log-accepted-android-sdk-licenses: true
+
+      - name: Report the toolchain
+        run: |
+          echo "ANDROID_HOME=$ANDROID_HOME"
+          echo "NDK=$ANDROID_NDK"
+          cmake --version | head -1
+          ninja --version
+          java -version 2>&1 | head -1
+
+      # The SDL stack is a few cross-compiles that depend on nothing in this
+      # repository, so it is cached and only rebuilt when the script changes.
+      - name: Restore the Android SDL prefix
+        uses: actions/cache@v4
+        id: sdl-cache
+        with:
+          path: build/android-sdl
+          key: android-sdl-${{ runner.os }}-${{ hashFiles('scripts/android/build-sdl-android.sh') }}
+
+      - name: Build SDL2 for Android
+        if: steps.sdl-cache.outputs.cache-hit != 'true'
+        run: bash scripts/android/build-sdl-android.sh
+
+      - name: Build the APK
+        env:
+          ANDROID_SDL_PREFIX: ${{ github.workspace }}/build/android-sdl
+        run: bash scripts/android/build-apk.sh
+
+      - name: Upload the APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: afternoodle-android-arm64
+          path: dist/*.apk
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Report what is inside
+        run: |
+          ls -la dist/
+          unzip -l dist/*.apk | sed 's/^/  /'
+
   release:
     name: release
-    needs: build
+    needs: [build, android]
     if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
     permissions:
       contents: write
     steps:
+      # The release reuses what the jobs above built rather than rebuilding, so
+      # an asset is always the same bytes the tests ran against.
       - uses: actions/download-artifact@v4
         with:
           path: artifacts
+
+      - name: Collect release assets
+        run: |
+          set -euo pipefail
+          mkdir -p release
+          for d in artifacts/afternoodle-*/; do
+            name="$(basename "$d")"
+            tar czf "release/${name}.tar.gz" -C "$d" .
+            echo "  ${name}.tar.gz"
+          done
+          # The APK goes up as-is; wrapping a zip in a tarball helps nobody.
+          for a in artifacts/afternoodle-android-arm64/*.apk; do
+            [ -e "$a" ] || continue
+            cp "$a" release/
+            echo "  $(basename "$a")"
+          done
+          ls -la release/
+
       - name: Publish release
         uses: softprops/action-gh-release@v2
         with:
-          files: artifacts/**/*
+          files: release/*
           body: |
             afternoodle ${{ github.ref_name }}
 
-            | Platform | Artifact |
-            | --- | --- |
-            | Linux x86_64 | `afternoodle-linux-x64` |
-            | Windows x86_64 | `afternoodle-windows-x64` |
-            | macOS Apple Silicon | `afternoodle-macos-arm64` |
+            | Platform | Arch | Asset |
+            | --- | --- | --- |
+            | Linux | x86-64 | `afternoodle-linux-x64.tar.gz` |
+            | Windows | x86-64 | `afternoodle-windows-x64.tar.gz` |
+            | macOS | Apple Silicon (arm64) | `afternoodle-macos-arm64.tar.gz` |
+            | Android | arm64-v8a, API 24+ | `afternoodle-com.afternoodle.app-arm64-v8a-*.apk` |
 
-            Android arm64 is built but not released yet.
+            Each archive holds `libafndle.a`, the `afndle-tests` binary and the
+            public headers under `include/`. The Windows archive also carries
+            the SDL2 DLLs, so `afndle-tests.exe` runs without anything else
+            installed.
+
+            The Android APK runs the engine on SDL's dummy video driver, runs
+            the same check suite, and shows a frame the real renderer drew. It
+            is signed with the published AOSP debug key, so it is for testing
+            rather than distribution.

@@ -33,3 +33,10 @@ compile_commands.json
 scratch/
 *.log
 *.tmp
+
+# Android
+/build/apk/
+/build/android/
+/build/android-sdl/
+/build/android-sdl-work/
+/dist/*.apk

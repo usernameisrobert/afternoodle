@@ -145,12 +145,10 @@ static void test_json(void) {
     af_arena_destroy(a);
 }
 
-/* The argc/argv form is required, not decorative: on Windows SDL2main's
- * headers redirect main to SDL_main(int, char**), and a main(void) would
- * not match that declaration. */
-int main(int argc, char **argv) {
-    (void)argc;
-    (void)argv;
+/* The body is exposed as af_test_engine_main so the Android APK can run the
+ * very same checks CI runs on a device, instead of testing a second copy of
+ * them that could drift. Returns the number of failed checks. */
+int af_test_engine_main(void) {
     headless();
     test_math();
     test_strings();
@@ -168,7 +166,7 @@ int main(int argc, char **argv) {
     CHECK(win != NULL);
     if (!win) {
         printf("no window, aborting\n");
-        return 1;
+        return ++failures;
     }
 
     AfRenderer *r = af_window_renderer(win);
@@ -425,5 +423,14 @@ int main(int argc, char **argv) {
         printf("\n%d CHECK(s) FAILED\n", failures);
     else
         printf("\nall checks passed\n");
-    return failures ? 1 : 0;
+    return failures;
+}
+
+/* The argc/argv form is required, not decorative: on Windows SDL2main's
+ * headers redirect main to SDL_main(int, char**), and a main(void) would
+ * not match that declaration. */
+int main(int argc, char **argv) {
+    (void)argc;
+    (void)argv;
+    return af_test_engine_main() ? 1 : 0;
 }
