@@ -65,16 +65,33 @@ brew install sdl2 sdl2_image sdl2_ttf sdl2_mixer
 make
 make run-tests
 
-# Windows (MSYS2 / Git Bash with MinGW)
-pacman -S mingw-w64-x86_64-SDL2 mingw-w64-x86_64-SDL2_image mingw-w64-x86_64-SDL2_ttf mingw-w64-x86_64-SDL2_mixer
+# Windows (MSYS2 MINGW64 shell)
+pacman -S --needed make mingw-w64-x86_64-gcc mingw-w64-x86_64-SDL2 mingw-w64-x86_64-SDL2_image mingw-w64-x86_64-SDL2_ttf mingw-w64-x86_64-SDL2_mixer
 make -f Makefile.win
+make -f Makefile.win run-tests
 ```
+
+## Supported platforms
+
+Every target below is built and has its test suite run in CI on each push, so
+all four are known to compile and pass rather than merely being expected to.
+
+| Platform | Arch | How it is verified |
+| --- | --- | --- |
+| Linux | x86-64 | `ubuntu-latest`, ELF x86-64 |
+| macOS | arm64 (Apple Silicon) | `macos-14`, Mach-O arm64 |
+| Windows | x86-64 | `windows-latest` + MSYS2 MINGW64, PE32+ x86-64 |
+| Android | arm64-v8a, API 24 | `scripts/android/build.sh`, run on device |
+
+Pushes upload a static library, the test binary, and the public headers per
+platform. Tagging `v*` additionally publishes release archives. See
+`.github/workflows/build.yml`.
 
 `make` produces `build/libafndle.a` and `build/afndle-tests`. The test binary
 runs headless with SDL's dummy video driver, so it works over SSH and in CI.
 
-On macOS and Linux, release artifacts are built by CI. See
-`.github/workflows/build.yml`.
+CI publishes per-platform artifacts on every push; see
+[Supported platforms](#supported-platforms).
 
 ## Layout
 
