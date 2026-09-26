@@ -13,21 +13,21 @@
 void *af_malloc(size_t size) {
     if (size == 0) size = 1;
     void *p = malloc(size);
-    if (!p) af_panic(__FILE__, __LINE__, "out of memory allocating %zu bytes", size);
+    if (!p) af_panic(__FILE__, __LINE__, "out of memory allocating %" AF_SIZE_FMT " bytes", AF_SIZE_ARG(size));
     return p;
 }
 
 void *af_calloc(size_t count, size_t size) {
     if (count == 0 || size == 0) { count = 1; size = 1; }
     void *p = calloc(count, size);
-    if (!p) af_panic(__FILE__, __LINE__, "out of memory allocating %zu x %zu", count, size);
+    if (!p) af_panic(__FILE__, __LINE__, "out of memory allocating %" AF_SIZE_FMT " x %" AF_SIZE_FMT, AF_SIZE_ARG(count), AF_SIZE_ARG(size));
     return p;
 }
 
 void *af_realloc(void *p, size_t size) {
     if (size == 0) size = 1;
     void *n = realloc(p, size);
-    if (!n) af_panic(__FILE__, __LINE__, "out of memory reallocating %zu bytes", size);
+    if (!n) af_panic(__FILE__, __LINE__, "out of memory reallocating %" AF_SIZE_FMT " bytes", AF_SIZE_ARG(size));
     return n;
 }
 
@@ -36,10 +36,10 @@ void af_free(void *p) { free(p); }
 void *af_aligned_alloc(size_t size, size_t align) {
     if (align < sizeof(void *)) align = sizeof(void *);
     /* align must be a power of two */
-    if (align & (align - 1)) af_panic(__FILE__, __LINE__, "alignment %zu is not a power of two", align);
+    if (align & (align - 1)) af_panic(__FILE__, __LINE__, "alignment %" AF_SIZE_FMT " is not a power of two", AF_SIZE_ARG(align));
     size_t rounded = (size + align - 1) & ~(align - 1);
     void *raw = malloc(rounded + align);
-    if (!raw) af_panic(__FILE__, __LINE__, "out of memory allocating %zu aligned bytes", size);
+    if (!raw) af_panic(__FILE__, __LINE__, "out of memory allocating %" AF_SIZE_FMT " aligned bytes", AF_SIZE_ARG(size));
     uintptr_t base = (uintptr_t)raw + align;
     base &= ~(uintptr_t)(align - 1);
     ((void **)base)[-1] = raw; /* stash the malloc pointer just below */
@@ -113,7 +113,7 @@ static void* block_data(AfArenaBlock *b) { return (char *)b + AF_ARENA_HEADER; }
 static AfArenaBlock *arena_new_block(size_t size) {
     if (size < AF_ARENA_DEFAULT_BLOCK) size = AF_ARENA_DEFAULT_BLOCK;
     AfArenaBlock *b = (AfArenaBlock *)calloc(1, size);
-    if (!b) af_panic(__FILE__, __LINE__, "arena: out of memory (%zu byte block)", size);
+    if (!b) af_panic(__FILE__, __LINE__, "arena: out of memory (%" AF_SIZE_FMT " byte block)", AF_SIZE_ARG(size));
     b->size = size - AF_ARENA_HEADER;
     b->used = 0;
     return b;
@@ -211,7 +211,7 @@ void *af_arena_alloc(AfArena *a, size_t size) {
 void *af_arena_calloc(AfArena *a, size_t count, size_t size) {
     size_t total = count * size;
     if (count != 0 && total / count != size)
-        af_panic(__FILE__, __LINE__, "arena: overflow in calloc(%zu, %zu)", count, size);
+        af_panic(__FILE__, __LINE__, "arena: overflow in calloc(%" AF_SIZE_FMT ", %" AF_SIZE_FMT ")", AF_SIZE_ARG(count), AF_SIZE_ARG(size));
     void *p = af_arena_alloc(a, total);
     memset(p, 0, total);
     return p;

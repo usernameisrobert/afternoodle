@@ -27,6 +27,12 @@
 #  define AF_OS_UNKNOWN 1
 #endif
 
+/* MinGW links msvcrt, whose printf predates C99 and has no %zu. The engine
+ * only ever formats sizes, never parses them, so printing them as unsigned
+ * long long works on every target and costs nothing. */
+#define AF_SIZE_FMT "llu"
+#define AF_SIZE_ARG(x) ((unsigned long long)(x))
+
 /* Windows DLL export/import decoration. */
 #if defined(AF_OS_WINDOWS)
 #  if defined(AFNDLE_BUILDING)

@@ -29,6 +29,7 @@ ifeq ($(CROSS),1)
   PREFIX  := x86_64-w64-mingw32-
 endif
 CC       = $(PREFIX)gcc
+AR       = $(PREFIX)ar
 WINDRES  = $(PREFIX)windres
 DLLTOOL  = $(PREFIX)dlltool
 
@@ -68,10 +69,11 @@ all: lib
 
 lib: $(LIB)
 
+# ar rather than $(CC) -r: make's built-in ARFLAGS is "rv", which gcc rejects.
 $(LIB): $(CORE_OBJ)
 	@mkdir -p $(dir $@)
 	@rm -f $@
-	$(CC) -r -nostdlib $(ARFLAGS) $^ -o $@
+	$(AR) rcs $@ $^
 	@echo "  AR   $@"
 
 $(BUILD)/%.o: %.c
