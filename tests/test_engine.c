@@ -145,7 +145,12 @@ static void test_json(void) {
     af_arena_destroy(a);
 }
 
-int main(void) {
+/* The argc/argv form is required, not decorative: on Windows SDL2main's
+ * headers redirect main to SDL_main(int, char**), and a main(void) would
+ * not match that declaration. */
+int main(int argc, char **argv) {
+    (void)argc;
+    (void)argv;
     headless();
     test_math();
     test_strings();
