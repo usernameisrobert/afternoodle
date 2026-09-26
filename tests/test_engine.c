@@ -5,6 +5,9 @@
 #include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
+/* SDL_setenv and SDL_getenv work on every target, including MinGW where the
+ * CRT has no setenv at all. The engine already depends on SDL2. */
+#include <SDL.h>
 #include "afndle/platform/platform.h"
 #include "afndle/render/render.h"
 #include "afndle/core/json.h"
@@ -22,8 +25,8 @@ static const char *current_group = "";
  * Set AFNDLE_TEST_NO_HEADLESS to test against a real window instead. */
 static void headless(void) {
 #if !defined(AFNDLE_TEST_NO_HEADLESS)
-    if (!getenv("SDL_VIDEODRIVER")) setenv("SDL_VIDEODRIVER", "dummy", 1);
-    if (!getenv("SDL_AUDIODRIVER")) setenv("SDL_AUDIODRIVER", "dummy", 1);
+    if (!SDL_getenv("SDL_VIDEODRIVER")) SDL_setenv("SDL_VIDEODRIVER", "dummy", 1);
+    if (!SDL_getenv("SDL_AUDIODRIVER")) SDL_setenv("SDL_AUDIODRIVER", "dummy", 1);
 #endif
 }
 
