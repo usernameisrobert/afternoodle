@@ -1,0 +1,108 @@
+# ============================================================================
+#  afternoodle engine  --  Windows x86_64 build (MSYS2 / MinGW-w64)
+# ============================================================================
+#  MSYS2 (recommended):
+#    pacman -S --needed mingw-w64-x86_64-toolchain \
+#                        mingw-w64-x86_64-SDL2 \
+#                        mingw-w64-x86_64-SDL2_image \
+#                        mingw-w64-x86_64-SDL2_ttf \
+#                        mingw-w64-x86_64-SDL2_mixer
+#    make -f Makefile.win
+#    make -f Makefile.win run-tests
+#    make -f Makefile.win cross     # collect binaries into dist/
+#
+#  From a Linux or macOS host, cross-compiling with mingw-w64:
+#    make -f Makefile.win cross CROSS=1
+#
+#  Produces build/win/libafndle.a, build/win/afndle-tests.exe and,
+#  after `cross`, dist/*.exe
+# ============================================================================
+
+NAME     = afndle
+BUILD   ?= build/win
+LIB      = $(BUILD)/lib$(NAME).a
+TEST_BIN = $(BUILD)/$(NAME)-tests.exe
+DIST     = dist/win-x64
+
+CROSS   ?= 0
+ifeq ($(CROSS),1)
+  PREFIX  := x86_64-w64-mingw32-
+endif
+CC       = $(PREFIX)gcc
+WINDRES  = $(PREFIX)windres
+DLLTOOL  = $(PREFIX)dlltool
+
+# SDL2 on Windows lives in the compiler prefix, not on the default search
+# path, so ask sdl2-config and let the user override the whole flag set.
+SDL_CFLAGS ?= $(shell $(PREFIX)sdl2-config --cflags 2>/dev/null)
+SDL_LIBS   ?= $(shell $(PREFIX)sdl2-config --libs 2>/dev/null)
+ifeq ($(strip $(SDL_LIBS)),)
+  SDL_LIBS := -lSDL2main -lSDL2 -lSDL2_image -lSDL2_ttf -lSDL2_mixer
+else
+  SDL_LIBS += -lSDL2main -lSDL2_image -lSDL2_ttf -lSDL2_mixer
+endif
+
+OPT      ?= -O2
+CFLAGS   ?= $(OPT)
+CFLAGS   += -std=c11 -fno-strict-aliasing -Iinclude -Isrc
+CFLAGS   += -Wall -Wextra -Wno-unused-parameter -Wno-missing-field-initializers
+CFLAGS   += -DAFNDLE_BUILDING -D_WIN32_WINNT=0x0601 $(SDL_CFLAGS)
+LDFLAGS  ?=
+LDLIBS   := $(SDL_LIBS) -lm
+
+# SDL2main supplies WinMain, so a -mwindows subsystem binary still works.
+# The test binary stays on the console: CI needs to read its exit code.
+WINFLAGS  = -municode -mwindows
+CONSOLEFLAGS =
+
+SRC_DIRS = src/core src/platform src/render src/ecs src/physics src/audio \
+           src/script src/vsl src/app
+CORE_SRC = $(foreach d,$(SRC_DIRS),$(wildcard $(d)/*.c))
+CORE_OBJ = $(patsubst %.c,$(BUILD)/%.o,$(CORE_SRC))
+TEST_SRC = $(wildcard tests/*.c)
+TEST_OBJ = $(patsubst %.c,$(BUILD)/%.o,$(TEST_SRC))
+
+.PHONY: all lib tests run-tests cross clean
+
+all: lib
+
+lib: $(LIB)
+
+$(LIB): $(CORE_OBJ)
+	@mkdir -p $(dir $@)
+	@rm -f $@
+	$(CC) -r -nostdlib $(ARFLAGS) $^ -o $@
+	@echo "  AR   $@"
+
+$(BUILD)/%.o: %.c
+	@mkdir -p $(dir $@)
+	$(CC) $(CFLAGS) -MMD -MP -c $< -o $@
+	@echo "  CC   $<"
+
+tests: $(TEST_BIN)
+
+$(TEST_BIN): $(TEST_OBJ) $(LIB)
+	@mkdir -p $(dir $@)
+	$(CC) $(CFLAGS) $(LDFLAGS) $(TEST_OBJ) $(LIB) -o $@ $(LDLIBS)
+	@echo "  LINK $@"
+
+AFNDLE_FONT ?=
+run-tests: $(TEST_BIN)
+	@AFNDLE_FONT="$(AFNDLE_FONT)" $(TEST_BIN)
+
+# Distribute the DLLs alongside the exe so the build runs on a clean machine.
+cross: $(LIB) $(TEST_BIN)
+	@mkdir -p $(DIST)
+	cp $(LIB) $(DIST)/
+	cp $(TEST_BIN) $(DIST)/
+	@for d in SDL2.dll SDL2_image.dll SDL2_ttf.dll SDL2_mixer.dll; do \
+	  src="$$($(PREFIX)sdl2-config --prefix 2>/dev/null)/bin/$$d"; \
+	  [ -f "$$src" ] && cp "$$src" $(DIST)/ || true; \
+	done
+	@printf 'afternoodle engine\nwindows-x64\n' > $(DIST)/manifest.txt
+	@echo "  DONE -> $(DIST)/"
+
+clean:
+	rm -rf $(BUILD) dist
+
+-include $(shell find $(BUILD) -name '*.d' 2>/dev/null)

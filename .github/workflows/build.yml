@@ -1,0 +1,127 @@
+name: build
+
+# Release platforms:
+#   linux-x64     ubuntu-latest
+#   windows-x64   windows-latest
+#   macos-arm64   macos-14 (Apple Silicon)
+# Android arm64 is built separately and is not released yet; see scripts/android.
+
+on:
+  push:
+    branches: [master, main]
+    tags: ['v*']
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: ${{ matrix.name }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: linux-x64
+            os: ubuntu-latest
+            makefile: Makefile
+            artifact: afternoodle-linux-x64
+          - name: windows-x64
+            os: windows-latest
+            makefile: Makefile.win
+            artifact: afternoodle-windows-x64
+          - name: macos-arm64
+            os: macos-14
+            makefile: Makefile
+            artifact: afternoodle-macos-arm64
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install SDL2 (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            libsdl2-dev libsdl2-image-dev libsdl2-ttf-dev libsdl2-mixer-dev
+
+      - name: Install SDL2 (macOS)
+        if: runner.os == 'macOS'
+        run: brew install sdl2 sdl2_image sdl2_ttf sdl2_mixer
+
+      - name: Install SDL2 (Windows)
+        if: runner.os == 'Windows'
+        shell: msys2 {0}
+        run: |
+          pacman -Sy --noconfirm --needed \
+            mingw-w64-x86_64-gcc \
+            mingw-w64-x86_64-pkgconf \
+            mingw-w64-x86_64-SDL2 \
+            mingw-w64-x86_64-SDL2_image \
+            mingw-w64-x86_64-SDL2_ttf \
+            mingw-w64-x86_64-SDL2_mixer
+
+      # The generated bitmap font is not in version control.
+      - name: Generate the built-in font
+        shell: bash
+        run: python3 scripts/gen_font.py
+
+      - name: Build and test (POSIX)
+        if: runner.os != 'Windows'
+        run: |
+          make -f ${{ matrix.makefile }} lib
+          make -f ${{ matrix.makefile }} run-tests
+          mkdir -p dist/${{ matrix.name }}
+          cp build/libafndle.a dist/${{ matrix.name }}/ 2>/dev/null || true
+          cp build/afndle-tests dist/${{ matrix.name }}/ 2>/dev/null || true
+
+      - name: Build and test (Windows)
+        if: runner.os == 'Windows'
+        shell: msys2 {0}
+        run: |
+          make -f ${{ matrix.makefile }} lib
+          make -f ${{ matrix.makefile }} run-tests
+          make -f ${{ matrix.makefile }} cross
+          cp -r dist/win-x64/. dist/${{ matrix.name }}/ 2>/dev/null || true
+
+      - name: Collect headers
+        shell: bash
+        run: |
+          mkdir -p dist/${{ matrix.name }}/include
+          cp -r include/afndle dist/${{ matrix.name }}/include/
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact }}
+          path: dist/${{ matrix.name }}/
+          if-no-files-found: error
+          retention-days: 30
+
+  release:
+    name: release
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+      - name: Publish release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: artifacts/**/*
+          body: |
+            afternoodle ${{ github.ref_name }}
+
+            | Platform | Artifact |
+            | --- | --- |
+            | Linux x86_64 | `afternoodle-linux-x64` |
+            | Windows x86_64 | `afternoodle-windows-x64` |
+            | macOS Apple Silicon | `afternoodle-macos-arm64` |
+
+            Android arm64 is built but not released yet.

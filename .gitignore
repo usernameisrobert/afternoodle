@@ -1,0 +1,35 @@
+# build output
+build/
+dist/
+out/
+*.o
+*.a
+*.so
+*.dylib
+*.dll
+*.exe
+*.pdb
+*.ilk
+*.lib
+*.exp
+
+# generated engine data
+src/render/builtinfont.c
+
+# platform noise
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# editors
+.vscode/
+.idea/
+*.swp
+*~
+.cache/
+compile_commands.json
+
+# local scratch
+scratch/
+*.log
+*.tmp
