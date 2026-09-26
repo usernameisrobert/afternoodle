@@ -362,6 +362,61 @@ int main(int argc, char **argv) {
         af_texture_destroy(t);
     }
 
+    current_group = "framebuffer readback";
+    {
+        /* af_r2d_read_pixels captures what was actually drawn, in the same
+         * ABGR8888 layout the rest of the renderer uses. */
+        int pw = (int)size.x, ph = (int)size.y;
+        uint32_t *fb = malloc((size_t)pw * ph * 4);
+        CHECK(fb != NULL);
+        if (fb) {
+            /* af_color_hex takes RGBA order, and a window's surface carries no
+             * alpha of its own, so what comes back is opaque. */
+            af_r2d_begin(r, af_color_hex(0x336699FF));
+            af_r2d_end(r);
+            CHECK(af_r2d_read_pixels(r, fb, pw, ph));
+            CHECK(fb[0] == af_tex_rgba8(0x33, 0x66, 0x99, 0xFF));
+            CHECK(fb[pw * ph - 1] == af_tex_rgba8(0x33, 0x66, 0x99, 0xFF));
+
+            /* Screen space has to put (0,0) at the top-left pixel. A world
+             * camera centres whatever it focuses on, so getting this wrong
+             * shifts every UI element by half the screen without changing a
+             * single counter -- only a pixel check catches it. */
+            af_r2d_begin(r, af_color_hex(0x000000FF));
+            af_r2d_ui_fill(r, af_rect(0, 0, 8, 8), af_color_hex(0xFF0000FF));
+            af_r2d_end(r);
+            CHECK(af_r2d_read_pixels(r, fb, pw, ph));
+            CHECK(fb[0] == af_tex_rgba8(0xFF, 0, 0, 0xFF));            /* (0,0) */
+            CHECK(fb[7] == af_tex_rgba8(0xFF, 0, 0, 0xFF));            /* (7,0) */
+            CHECK(fb[7 * pw + 7] == af_tex_rgba8(0xFF, 0, 0, 0xFF));  /* (7,7) */
+            CHECK(fb[8] == af_tex_rgba8(0, 0, 0, 0xFF));                /* (8,0) */
+            CHECK(fb[8 * pw + 8] == af_tex_rgba8(0, 0, 0, 0xFF));      /* (8,8) */
+            /* the centre of the view is the other end of the screen */
+            CHECK(fb[(ph / 2) * pw + pw / 2] == af_tex_rgba8(0, 0, 0, 0xFF));
+
+            /* a world camera is a different thing: it centres its focus */
+            {
+                AfCamera2D cam = af_camera_default();
+                cam.size = size;
+                AfVec2 mid = af_camera_to_screen(cam, af_v2s(0.0f));
+                CHECK(af_v2eq(mid, af_v2(size.x * 0.5f, size.y * 0.5f)));
+                cam.position = af_v2(100.0f, 50.0f);
+                AfVec2 p = af_camera_to_screen(cam, af_v2(100.0f, 50.0f));
+                CHECK(af_v2eq(p, af_v2(size.x * 0.5f, size.y * 0.5f)));
+                /* and zoom scales about that centre */
+                cam.zoom = 2.0f;
+                AfVec2 z = af_camera_to_screen(cam, af_v2(150.0f, 50.0f));
+                CHECK(af_v2eq(z, af_v2(size.x * 0.5f + 100.0f, size.y * 0.5f)));
+            }
+
+            /* bad arguments are refused rather than crashing */
+            CHECK(!af_r2d_read_pixels(r, NULL, pw, ph));
+            CHECK(!af_r2d_read_pixels(r, fb, 0, ph));
+            CHECK(!af_r2d_read_pixels(NULL, fb, pw, ph));
+            free(fb);
+        }
+    }
+
     current_group = "teardown";
     af_window_destroy(win);
     af_platform_shutdown();

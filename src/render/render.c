@@ -247,6 +247,10 @@ static SDL_Surface *texture_readback(AfTexture *t) {
 
     SDL_SetRenderDrawBlendMode(r, SDL_BLENDMODE_NONE);
     SDL_SetRenderDrawColor(r, 0, 0, 0, 255);
+    /* Copy from the window, not from whatever target happens to be bound:
+     * reading a texture means reading the texture, whatever the caller was
+     * mid-way through doing. */
+    SDL_SetRenderTarget(r, NULL);
     SDL_RenderSetClipRect(r, NULL);
     SDL_SetTextureBlendMode(t->sdl, SDL_BLENDMODE_NONE);
     SDL_RenderClear(r);
@@ -781,6 +785,18 @@ void af_r2d_clear(AfRenderer *r, AfColor c) {
 AfVec2 af_r2d_screen_size(AfRenderer *r) { return r ? r->screen : af_v2s(0); }
 float af_r2d_render_scale(AfRenderer *r) { return r ? r->scale : 1.0f; }
 
+int af_r2d_read_pixels(AfRenderer *r, void *dst, int w, int h) {
+    if (!r || !r->sdl || !dst || w <= 0 || h <= 0) return 0;
+    /* Flush first: capturing a frame that is still sitting in a batch would
+     * otherwise miss everything drawn since the last batch break. */
+    af_r2d_flush_sprites(r);
+    batch_break(r);
+    SDL_Rect rect = {0, 0, w, h};
+    /* ABGR8888, matching the texture layout the rest of the renderer uses. */
+    return SDL_RenderReadPixels(r->sdl, &rect, SDL_PIXELFORMAT_ABGR8888, dst,
+                                w * 4) == 0;
+}
+
 void af_r2d_set_camera(AfRenderer *r, AfCamera2D cam) {
     if (!r) return;
     cam.size = r->screen;
@@ -965,7 +981,13 @@ void af_r2d_fill(AfRenderer *r, AfRect rect, AfColor c) {
 void af_r2d_screen_space_begin(AfRenderer *r, AfCamera2D *out_saved) {
     if (!r) return;
     if (out_saved) *out_saved = r->cam;
+    /* A world camera puts whatever it is focused on at the centre of the view,
+     * so focusing the default camera on the world origin would shift every
+     * screen-space coordinate by half the screen. Focusing on the middle of
+     * the view instead makes the view matrix the identity, which is what
+     * "screen space" has to mean for (0,0) to be the top-left pixel. */
     r->cam = af_camera_default();
+    r->cam.position = af_v2(r->screen.x * 0.5f, r->screen.y * 0.5f);
     r->cam.size = r->screen;
     r->view_dirty = 1;
 }

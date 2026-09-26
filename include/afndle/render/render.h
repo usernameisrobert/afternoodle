@@ -105,6 +105,14 @@ AF_API int  af_r2d_sprite_count(AfRenderer* r);
 
 /* ---------------------------------------------------------- direct quads */
 /* Immediate: no sorting, no recording. */
+/* Two coordinate spaces, and the difference matters:
+ *   world  -- af_r2d_fill and friends, through the current camera. A camera
+ *             centres whatever it focuses on, so world (0,0) is the middle of
+ *             the screen, not its top-left corner.
+ *   screen -- af_r2d_ui_fill and friends, in pixels, with (0,0) at the
+ *             top-left pixel of the renderer. Use this for anything that has
+ *             to stay put while the camera moves.
+ */
 AF_API void af_r2d_quad(AfRenderer* r, AfTexture* tex, AfVec2 center,
                         AfVec2 half_size, float rotation, AfRect uv, AfColor tint);
 /** Axis-aligned textured rect, unrotated. The bread-and-butter UI call. */
@@ -164,6 +172,24 @@ AF_API float af_r2d_text_height(AfRenderer* r, AfFont* font, float size);
 AF_API void  af_r2d_text_sized(AfRenderer* r, AfFont* font, AfVec2 pos,
                                const char* text, float width, float max_height,
                                AfColor c);
+
+/* -------------------------------------------------------------- readback */
+/** Reads the renderer's current target back into `dst` as tightly packed
+ *  ABGR8888 rows of `w` pixels, top row first -- the same layout
+ *  af_texture_get_pixel() and af_tex_rgba8() use, so no conversion is needed
+ *  on the way in or out. `dst` must hold w * h * 4 bytes.
+ *
+ *  Any render target bound to the renderer is read instead of the window, so
+ *  this works for offscreen work as well as for a presented frame. Returns 1
+ *  on success and 0 on failure, leaving `dst` untouched on failure.
+ *
+ *  A window's surface has no alpha channel of its own, so reading one gives
+ *  0xFF in every alpha byte however transparent the colours were. Read from a
+ *  render target texture to keep real alpha.
+ *
+ *  Readback flushes pending batches first, so a frame drawn with af_r2d_end()
+ *  does not have to be presented to be captured. */
+AF_API int af_r2d_read_pixels(AfRenderer* r, void* dst, int w, int h);
 
 /* ----------------------------------------------------------------- stats */
 AF_API AfRenderStats af_r2d_stats(AfRenderer* r);
