@@ -222,16 +222,6 @@ void af_texture_set_repeat(AfTexture *t, int repeat) {
 
 /* Renders `t` into a fresh ABGR8888 surface. Needs a live renderer, so it is
  * only usable inside a frame; the editor and screenshot paths both need it. */
-/* SDL 2.32 renamed these; the old spellings are gone there but are all we
- * have on 2.0.x. */
-#if SDL_VERSION_ATLEAST(2, 32, 0)
-#define af_sdl_get_clip_rect SDL_RenderGetClipRect
-#define af_sdl_set_clip_rect SDL_RenderSetClipRect
-#else
-#define af_sdl_get_clip_rect SDL_GetRenderClipRect
-#define af_sdl_set_clip_rect SDL_SetRenderClipRect
-#endif
-
 /* Pulls a texture's pixels back into a new surface the caller must free.
  * Readback scribbles on the renderer, so every piece of state it touches is
  * saved and put back: a caller asking for one pixel mid-frame must not lose
@@ -244,7 +234,7 @@ static SDL_Surface *texture_readback(AfTexture *t) {
     if (!s) return NULL;
 
     SDL_Rect saved_clip;
-    af_sdl_get_clip_rect(r, &saved_clip);
+    SDL_RenderGetClipRect(r, &saved_clip);
     SDL_BlendMode saved_draw_blend;
     SDL_GetRenderDrawBlendMode(r, &saved_draw_blend);
     Uint8 cr, cg, cb, ca;
@@ -257,14 +247,14 @@ static SDL_Surface *texture_readback(AfTexture *t) {
 
     SDL_SetRenderDrawBlendMode(r, SDL_BLENDMODE_NONE);
     SDL_SetRenderDrawColor(r, 0, 0, 0, 255);
-    af_sdl_set_clip_rect(r, NULL);
+    SDL_RenderSetClipRect(r, NULL);
     SDL_SetTextureBlendMode(t->sdl, SDL_BLENDMODE_NONE);
     SDL_RenderClear(r);
     SDL_RenderCopy(r, t->sdl, NULL, &dst);
     SDL_RenderReadPixels(r, &dst, SDL_PIXELFORMAT_ABGR8888, s->pixels, s->pitch);
 
     SDL_SetRenderTarget(r, saved_target);
-    af_sdl_set_clip_rect(r, &saved_clip);
+    SDL_RenderSetClipRect(r, &saved_clip);
     SDL_SetRenderDrawBlendMode(r, saved_draw_blend);
     SDL_SetRenderDrawColor(r, cr, cg, cb, ca);
     SDL_SetTextureBlendMode(t->sdl, saved_tex_blend);

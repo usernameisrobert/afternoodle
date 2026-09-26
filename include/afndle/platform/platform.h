@@ -289,7 +289,8 @@ AF_API int    af_fs_is_absolute(const char* path);
 AF_API void   af_fs_absolute(const char* path, char* out, int cap);
 /** Directory holding the running executable. */
 AF_API void   af_fs_exe_dir(char* out, int cap);
-AF_API void   af_fs_set_cwd(const char*path);
+/** Changes the process working directory. Returns 0 on failure. */
+AF_API int    af_fs_set_cwd(const char* path);
 AF_API void   af_fs_get_cwd(char* out, int cap);
 /** Path to a user-writable config dir for this app, created on demand. */
 AF_API void   af_fs_user_config_dir(const char* app, char* out, int cap);

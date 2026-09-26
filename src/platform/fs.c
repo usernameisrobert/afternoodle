@@ -326,12 +326,13 @@ void af_fs_exe_dir(char *out, int cap) {
     af_fs_get_cwd(out, cap);
 }
 
-void af_fs_set_cwd(const char *path) {
-    if (!path) return;
+/* Returns 0 on success, so a failed chdir is visible instead of silent. */
+int af_fs_set_cwd(const char *path) {
+    if (!path) return 0;
 #if defined(AF_OS_WINDOWS)
-    _chdir(path);
+    return _chdir(path);
 #else
-    chdir(path);
+    return chdir(path);
 #endif
 }
 

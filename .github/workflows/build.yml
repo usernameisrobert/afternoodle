@@ -51,13 +51,27 @@ jobs:
         if: runner.os == 'macOS'
         run: brew install sdl2 sdl2_image sdl2_ttf sdl2_mixer
 
+      # windows-latest has no MSYS2 shell until this action installs one, and
+      # SDL2 for MinGW only exists in its repositories.
+      - name: Set up MSYS2
+        if: runner.os == 'Windows'
+        uses: msys2/setup-msys2@v2
+        with:
+          msystem: MINGW64
+          update: true
+          install: >-
+            mingw-w64-x86_64-gcc
+            mingw-w64-x86_64-pkgconf
+            mingw-w64-x86_64-SDL2
+            mingw-w64-x86_64-SDL2_image
+            mingw-w64-x86_64-SDL2_ttf
+            mingw-w64-x86_64-SDL2_mixer
+
       - name: Install SDL2 (Windows)
         if: runner.os == 'Windows'
         shell: msys2 {0}
         run: |
-          pacman -Sy --noconfirm --needed \
-            mingw-w64-x86_64-gcc \
-            mingw-w64-x86_64-pkgconf \
+          pacman -S --noconfirm --needed \
             mingw-w64-x86_64-SDL2 \
             mingw-w64-x86_64-SDL2_image \
             mingw-w64-x86_64-SDL2_ttf \
