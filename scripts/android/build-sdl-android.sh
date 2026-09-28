@@ -124,7 +124,8 @@ unpack() {
 unpack SDL        "$SDL_URL/SDL2-$SDL_VERSION.tar.gz"
 unpack SDL_ttf    "$SDL_TTF_URL/SDL2_ttf-$SDL_TTF_VERSION.tar.gz"
 unpack SDL_image  "$SDL_IMAGE_URL/SDL2_image-$SDL_IMAGE_VERSION.tar.gz"
-unpack freetype   "$GITHUB/freetype/freetype/archive/refs/tags/VER-${Freetype_VERSION/./-}.tar.gz"
+# freetype tags its releases with dashes, not dots: VER-2-13-3, not VER-2.13.3.
+unpack freetype   "$GITHUB/freetype/freetype/archive/refs/tags/VER-${Freetype_VERSION//./-}.tar.gz"
 unpack zlib       "$GITHUB/madler/zlib/releases/download/v$ZLIB_VERSION/zlib-$ZLIB_VERSION.tar.gz"
 unpack libpng     "$GITHUB/pnggroup/libpng/archive/refs/tags/v$LIBPNG_VERSION.tar.gz"
 
