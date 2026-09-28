@@ -150,6 +150,20 @@ install_lib() {
   say "  $outname  $(du -h "$OUT/lib/$outname" | cut -f1)"
 }
 
+# install_header <project> <header> <dest-dir>
+#
+# Header locations move between releases: SDL 2.32 flattened include/SDL2 down
+# to include/, and SDL2_ttf 2.24 keeps SDL_ttf.h in the tarball root with no
+# include directory at all. So headers are found by name, and a project that
+# has moved them fails loudly here rather than in a compile error later.
+install_header() {
+  local project="$1" header="$2" dest="$3" found
+  found="$(find "$DL/$project" -name "$header" -type f | head -1)"
+  [ -n "$found" ] || die "$header not found in the $project sources"
+  mkdir -p "$dest"
+  cp "$found" "$dest/$header"
+}
+
 # ---------------------------------------------------------------- zlib
 say "zlib $ZLIB_VERSION"
 if [ ! -f "$OUT/lib/libz.a" ]; then
@@ -212,9 +226,15 @@ if [ ! -f "$OUT/lib/libSDL2.a" ]; then
     -DSDL_JACK=OFF -DSDL_SNDIO=OFF -DSDL_LIBSYSTEM=OFF
   cmake --build "$BUILD/SDL" --target SDL2-static >/dev/null
   install_lib "$BUILD/SDL/libSDL2.a" libSDL2.a
+  # The headers go in a subdirectory whatever the source layout is, because
+  # <SDL.h> has to be found via <SDL2/SDL.h> and the engine passes
+  # -I<prefix>/include/SDL2.
+  sdl_h="$(find "$DL/SDL/include" -name SDL.h -type f | head -1)"
+  [ -n "$sdl_h" ] || die "SDL.h not found in the SDL sources"
+  sdl_inc="$(dirname "$sdl_h")"
   rm -rf "$OUT/include/SDL2"
   mkdir -p "$OUT/include/SDL2"
-  cp -r "$DL/SDL/include/SDL2/." "$OUT/include/SDL2/"
+  cp -r "$sdl_inc/." "$OUT/include/SDL2/"
 fi
 
 # ---------------------------------------------------------------- SDL2_ttf
@@ -231,7 +251,7 @@ if [ ! -f "$OUT/lib/libSDL2_ttf.a" ]; then
     -DCMAKE_PREFIX_PATH="$OUT"
   cmake --build "$BUILD/SDL_ttf" --target SDL2_ttf >/dev/null
   install_lib "$BUILD/SDL_ttf/libSDL2_ttf.a" libSDL2_ttf.a
-  cp "$DL/SDL_ttf/include/SDL_ttf.h" "$OUT/include/"
+  install_header SDL_ttf SDL_ttf.h "$OUT/include"
 fi
 
 # ---------------------------------------------------------------- SDL2_image
@@ -259,7 +279,7 @@ if [ ! -f "$OUT/lib/libSDL2_image.a" ]; then
     -DCMAKE_PREFIX_PATH="$OUT"
   cmake --build "$BUILD/SDL_image" --target SDL2_image >/dev/null
   install_lib "$BUILD/SDL_image/libSDL2_image.a" libSDL2_image.a
-  cp "$DL/SDL_image/include/SDL_image.h" "$OUT/include/"
+  install_header SDL_image SDL_image.h "$OUT/include"
 fi
 
 say "done -> $OUT"
