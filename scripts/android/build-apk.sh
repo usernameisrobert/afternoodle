@@ -33,6 +33,11 @@ MIN_SDK=24
 TARGET_SDK="${ANDROID_TARGET_SDK:-34}"
 PKG="com.afternoodle.app"
 
+# Read rather than hardcode, so the APK version cannot drift from the library's.
+VERSION="$(sed -n 's/^#define AFNDLE_VERSION_STRING "\(.*\)"/\1/p' \
+  include/afndle/core/afconfig.h)"
+[ -n "$VERSION" ] || die "no AFNDLE_VERSION_STRING in include/afndle/core/afconfig.h"
+
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 cd "$ROOT"
 
@@ -44,26 +49,36 @@ say() { printf '==> %s\n' "$*"; }
 die() { printf 'error: %s\n' "$*" >&2; exit 1; }
 
 # ------------------------------------------------------------------ toolchain
-for t in javac d8 aapt2 zipalign apksigner keytool; do
-  command -v "$t" >/dev/null 2>&1 || die "$t is required but not on PATH"
-done
-
 SDK="${ANDROID_SDK_ROOT:-${ANDROID_HOME:-$HOME/android-sdk}}"
 [ -d "$SDK" ] || die "no Android SDK; set ANDROID_SDK_ROOT"
 ANDROID_JAR="$SDK/platforms/android-$TARGET_SDK/android.jar"
 [ -f "$ANDROID_JAR" ] || die "no android.jar for API $TARGET_SDK under $SDK/platforms"
 say "sdk: $SDK (android.jar API $TARGET_SDK)"
 
-# Termux ships d8 and friends in /usr/bin; a full SDK keeps them under
-# build-tools, so look there too before giving up.
+# A full SDK keeps the build tools under build-tools/<version>/ rather than on
+# PATH, which is where they are in CI, so each one is resolved to an absolute
+# path here instead of being assumed to be on PATH.
+BUILD_TOOLS="$(ls -d "$SDK"/build-tools/*/ 2>/dev/null | sort -V | tail -1)"
 find_tool() {
-  local name="$1"
-  command -v "$name" >/dev/null 2>&1 && { command -v "$name"; return; }
-  local hit
-  hit="$(ls -d "$SDK"/build-tools/*/ 2>/dev/null | sort -V | tail -1)"
-  [ -n "$hit" ] && [ -x "${hit}${name}" ] && { echo "${hit}${name}"; return; }
-  die "$name not found (looked on PATH and in $SDK/build-tools)"
+  local name="$1" d
+  if command -v "$name" >/dev/null 2>&1; then
+    command -v "$name"
+    return
+  fi
+  for d in "$BUILD_TOOLS" "$SDK/cmdline-tools/latest/bin/"; do
+    if [ -x "${d}${name}" ]; then echo "${d}${name}"; return; fi
+  done
+  die "$name not found (looked on PATH and under $SDK/build-tools)"
 }
+
+JAVAC="$(find_tool javac)"
+D8="$(find_tool d8)"
+AAPT2="$(find_tool aapt2)"
+ZIP="$(find_tool zip)"
+ZIPALIGN="$(find_tool zipalign)"
+APKSIGNER="$(find_tool apksigner)"
+KEYTOOL="$(find_tool keytool)"
+say "tools: $(dirname "$AAPT2")"
 
 # ------------------------------------------------------------------ SDL prefix
 SDL_PREFIX="${ANDROID_SDL_PREFIX:-$ROOT/build/android-sdl}"
@@ -147,7 +162,7 @@ fi
 # ------------------------------------------------------------------ java
 say "compiling java"
 find android/java -name '*.java' | sort > "$OUT/sources.txt"
-javac -nowarn -source 11 -target 11 \
+"$JAVAC" -nowarn -source 11 -target 11 \
   -classpath "$ANDROID_JAR" \
   -d "$OUT/classes" \
   @"$OUT/sources.txt" 2>&1 | grep -v 'bootstrap class path' || true
@@ -159,7 +174,7 @@ say "dexing"
 # directory, so it has to run from inside the class output.
 ( cd "$OUT/classes" \
   && find . -name '*.class' > classfiles.txt \
-  && d8 --release --min-api "$MIN_SDK" --lib "$ANDROID_JAR" \
+  && "$D8" --release --min-api "$MIN_SDK" --lib "$ANDROID_JAR" \
        --output "$OUT" @classfiles.txt )
 [ -f "$OUT/classes.dex" ] || die "d8 produced no classes.dex"
 
@@ -167,59 +182,63 @@ say "dexing"
 say "compiling resources"
 RES_ZIP="$OUT/res.zip"
 if [ -d android/res ]; then
-  aapt2 compile --dir android/res -o "$RES_ZIP"
+  "$AAPT2" compile --dir android/res -o "$RES_ZIP"
 else
-  aapt2 compile android/AndroidManifest.xml -o "$RES_ZIP" 2>/dev/null || true
-  RES_ARGS=()
+  RES_ZIP=""
 fi
 
 # ------------------------------------------------------------------ link
 say "linking $PKG"
 AAPT2_LINK_ARGS=()
-[ -f "$RES_ZIP" ] && AAPT2_LINK_ARGS+=("$RES_ZIP")
+[ -n "$RES_ZIP" ] && AAPT2_LINK_ARGS+=("$RES_ZIP")
 
-aapt2 link \
+"$AAPT2" link \
   -o "$OUT/base.apk" \
   -I "$ANDROID_JAR" \
   --manifest android/AndroidManifest.xml \
   --min-sdk-version "$MIN_SDK" \
   --target-sdk-version "$TARGET_SDK" \
   --version-code 1 \
-  --version-name 0.1.0 \
+  --version-name "$VERSION" \
   --no-version-vectors \
   "${AAPT2_LINK_ARGS[@]}" \
   2>&1 | sed 's/^/  /'
 
-# The dex and the native library are added to the linked APK: aapt2 does not
-# know about either, and zipalign has to run over the result.
+# The dex and the native library are added to the linked APK: aapt2 knows
+# about neither, and zipalign has to run over the result. The .so is added
+# stored rather than deflated, so Android can map it straight out of the APK
+# instead of having to unpack it somewhere it may not be allowed to write.
 say "adding dex and native library"
-( cd "$OUT" && zip -q base.apk classes.dex && zip -q base.apk "lib/$ABI/libafndle.so" )
+( cd "$APK_DIR" && "$ZIP" -q -0 "$OUT/base.apk" "lib/$ABI/libafndle.so" )
+( cd "$OUT" && "$ZIP" -q "$OUT/base.apk" classes.dex )
 
 # ------------------------------------------------------------------ sign
 say "aligning"
-zipalign -f -p 4 "$OUT/base.apk" "$OUT/aligned.apk"
+"$ZIPALIGN" -f -p 4 "$OUT/base.apk" "$OUT/aligned.apk"
 
 KEYSTORE="${AFNDLE_KEYSTORE:-$OUT/debug.keystore}"
+KS_PASS="${AFNDLE_KEYSTORE_PASS:-android}"
+KEY_ALIAS="${AFNDLE_KEY_ALIAS:-androiddebugkey}"
 if [ ! -f "$KEYSTORE" ]; then
   say "generating the AOSP debug keystore (published key, not a secret)"
-  keytool -genkeypair -v \
+  "$KEYTOOL" -genkeypair -v \
     -keystore "$KEYSTORE" \
-    -storepass android -keypass android \
-    -alias androiddebugkey \
+    -storepass "$KS_PASS" -keypass "$KS_PASS" \
+    -alias "$KEY_ALIAS" \
     -keyalg RSA -keysize 2048 -validity 10000 \
     -dname "CN=Android Debug,O=Android,C=US" >/dev/null 2>&1
 fi
 
-say "signing"
+say "signing with $KEY_ALIAS from $(basename "$KEYSTORE")"
 # v1 signing too: it costs nothing and keeps the APK installable on anything
 # old enough to need it.
-apksigner sign \
-  --ks "$KEYSTORE" --ks-pass pass:android --key-pass pass:android \
-  --ks-key-alias androiddebugkey \
+"$APKSIGNER" sign \
+  --ks "$KEYSTORE" --ks-pass "pass:$KS_PASS" --key-pass "pass:$KS_PASS" \
+  --ks-key-alias "$KEY_ALIAS" \
   --v1-signing-enabled true --v2-signing-enabled true \
   --out "$OUT/afternoodle.apk" "$OUT/aligned.apk"
 
-apksigner verify --print-certs "$OUT/afternoodle.apk" >/dev/null 2>&1 || \
+"$APKSIGNER" verify --print-certs "$OUT/afternoodle.apk" | sed 's/^/  /' || \
   die "the APK did not verify after signing"
 
 VER="$(git rev-parse --short HEAD 2>/dev/null || echo dev)"
