@@ -229,12 +229,12 @@ Java_com_afternoodle_engine_Afternoodle_nativeRenderFrame(JNIEnv *env, jclass cl
     return out;
 }
 
-/* --------------------------------------------------------------------------
- *  JNI_OnLoad
- * -------------------------------------------------------------------------- */
+/* There is deliberately no JNI_OnLoad here.
+ *
+ * SDL2 for Android defines one, and linking SDL2 statically into this library
+ * makes it part of libafndle.so, so a second definition is a duplicate symbol
+ * at link time. SDL's is the one worth having anyway: it caches the JavaVM
+ * and calls SDL_SetMainReady(), which the engine relies on. The version this
+ * bridge used to return was all it did, and SDL's does strictly more.
+ */
 
-JNIEXPORT jint JNICALL JNI_OnLoad(JavaVM *vm, void *reserved) {
-    (void)vm;
-    (void)reserved;
-    return JNI_VERSION_1_6;
-}
