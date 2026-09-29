@@ -129,30 +129,24 @@ READELF="$HOST_BIN/llvm-readelf"
 # static runtime is used rather than libc++_shared.so so the APK still ships
 # exactly one native library.
 # $HOST_BIN is .../llvm/prebuilt/<host>/bin, so one dirname gives the host
-# directory that the sysroot lives under.
+# directory that the sysroot lives under, and its stubs are versioned by API.
 PREBUILT="$(dirname "$HOST_BIN")"
 SYSROOT_LIB="$PREBUILT/sysroot/usr/lib/$TRIPLE"
+# The versioned stub directory the build target is in. The device this APK
+# ships to is newer than MIN_SDK, so the newest stubs are the honest answer to
+# "what will this resolve at run time"; a symbol in a newer stub would still be
+# verified by the newest platform, which is where the app actually runs.
+STUB_VER="$(ls "$SYSROOT_LIB" 2>/dev/null | grep -E '^[0-9]+$' | sort -n | tail -1)"
+[ -n "$STUB_VER" ] || die "no API-versioned stub libraries under $SYSROOT_LIB"
 LIBCXX_STATIC="$SYSROOT_LIB/libc++_static.a"
-# libc++_abi.a and libunwind.a moved between NDK releases: newer NDKs merged
-# libc++abi and the unwinder into libc++_static.a and stopped shipping them as
-# siblings under the sysroot. Which layout is in use is irrelevant to the final
-# result, because the undefined-symbol check below verifies the output, so the
-# link line takes whichever of these actually exists.
-LIBCXX_ABI=""
-LIBUNWIND=""
-for a in \
-    "$SYSROOT_LIB/libc++_abi.a" "$SYSROOT_LIB/libunwind.a" \
-    "$NDK/sources/cxx-stl/llvm-libc++/libs/$ABI/libc++_abi.a" \
-    "$NDK/sources/cxx-stl/llvm-libc++/libs/$ABI/libunwind.a"; do
-  [ -f "$a" ] || continue
-  case "$a" in
-    *libc++_abi.a)  LIBCXX_ABI="$a" ;;
-    *libunwind.a)   LIBUNWIND="$a"  ;;
-  esac
-done
-[ -f "$LIBCXX_STATIC" ] || die "no libc++_static.a under $PREBUILT/sysroot"
-say "target: $TRIPLE$API"
-say "c++ runtime: libc++_static.a${LIBCXX_ABI:+ +$(basename "$LIBCXX_ABI")}${LIBUNWIND:+ +$(basename "$LIBUNWIND")}"
+# No C++ runtime is linked at all. SDL2, SDL2_ttf, SDL2_image, FreeType, libpng
+# and zlib are all C, and so is the engine, so there is nothing for a libc++
+# archive to satisfy; linking one only dragged its own operator new/delete,
+# std::terminate and personality frames in, which then had to come from
+# half-included libc++abi and libunwind objects that the NDK stopped shipping
+# as separate archives. The undefined-symbol check below proves the point: the
+# output must show no unresolved C++ ABI symbols.
+say "target: $TRIPLE$API (stub reference: API $STUB_VER)"
 
 # ------------------------------------------------------------------ clean
 rm -rf "$OUT"
@@ -189,15 +183,11 @@ OBJS="$OBJS $OUT/obj/test_engine.o"
 
 say "linking libafndle.so"
 L="$SDL_PREFIX/lib"
-CXX_EXTRA=()
-[ -n "$LIBCXX_ABI" ] && CXX_EXTRA+=("$LIBCXX_ABI")
-[ -n "$LIBUNWIND" ] && CXX_EXTRA+=("$LIBUNWIND")
 "$CC" -shared -fvisibility=default -o "$APK_DIR/lib/$ABI/libafndle.so" \
   $OBJS \
   -Wl,--start-group \
     "$L/libSDL2.a" "$L/libSDL2_image.a" "$L/libSDL2_ttf.a" \
     "$L/libfreetype.a" "$L/libpng16.a" "$L/libz.a" \
-    "$LIBCXX_STATIC" "${CXX_EXTRA[@]}" \
   -Wl,--end-group \
   -landroid -llog -lm -ldl
 "$STRIP" --strip-unneeded "$APK_DIR/lib/$ABI/libafndle.so"
@@ -262,7 +252,7 @@ if [ -x "$NM" ] && [ -x "$READELF" ]; then
 
   : > "$OUT/provided.txt"
   for lib in $("$READELF" -d "$SO" | grep NEEDED | sed -n 's/.*\[\(.*\)\].*/\1/p'); do
-    path="$SYSROOT_LIB/$API/$lib"
+    path="$SYSROOT_LIB/$STUB_VER/$lib"
     # A DT_NEEDED entry with no matching stub cannot be verified, and saying
     # nothing about it is how the last version of this check passed a broken
     # library, so it is an error rather than a skip.
