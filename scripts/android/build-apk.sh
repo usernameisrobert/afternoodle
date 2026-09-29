@@ -133,12 +133,26 @@ READELF="$HOST_BIN/llvm-readelf"
 PREBUILT="$(dirname "$HOST_BIN")"
 SYSROOT_LIB="$PREBUILT/sysroot/usr/lib/$TRIPLE"
 LIBCXX_STATIC="$SYSROOT_LIB/libc++_static.a"
-LIBCXX_ABI="$SYSROOT_LIB/libc++_abi.a"
-LIBUNWIND="$SYSROOT_LIB/libunwind.a"
-for a in "$LIBCXX_STATIC" "$LIBCXX_ABI" "$LIBUNWIND"; do
-  [ -f "$a" ] || die "no $(basename "$a") under $PREBUILT/sysroot"
+# libc++_abi.a and libunwind.a moved between NDK releases: newer NDKs merged
+# libc++abi and the unwinder into libc++_static.a and stopped shipping them as
+# siblings under the sysroot. Which layout is in use is irrelevant to the final
+# result, because the undefined-symbol check below verifies the output, so the
+# link line takes whichever of these actually exists.
+LIBCXX_ABI=""
+LIBUNWIND=""
+for a in \
+    "$SYSROOT_LIB/libc++_abi.a" "$SYSROOT_LIB/libunwind.a" \
+    "$NDK/sources/cxx-stl/llvm-libc++/libs/$ABI/libc++_abi.a" \
+    "$NDK/sources/cxx-stl/llvm-libc++/libs/$ABI/libunwind.a"; do
+  [ -f "$a" ] || continue
+  case "$a" in
+    *libc++_abi.a)  LIBCXX_ABI="$a" ;;
+    *libunwind.a)   LIBUNWIND="$a"  ;;
+  esac
 done
+[ -f "$LIBCXX_STATIC" ] || die "no libc++_static.a under $PREBUILT/sysroot"
 say "target: $TRIPLE$API"
+say "c++ runtime: libc++_static.a${LIBCXX_ABI:+ +$(basename "$LIBCXX_ABI")}${LIBUNWIND:+ +$(basename "$LIBUNWIND")}"
 
 # ------------------------------------------------------------------ clean
 rm -rf "$OUT"
@@ -175,12 +189,15 @@ OBJS="$OBJS $OUT/obj/test_engine.o"
 
 say "linking libafndle.so"
 L="$SDL_PREFIX/lib"
+CXX_EXTRA=()
+[ -n "$LIBCXX_ABI" ] && CXX_EXTRA+=("$LIBCXX_ABI")
+[ -n "$LIBUNWIND" ] && CXX_EXTRA+=("$LIBUNWIND")
 "$CC" -shared -fvisibility=default -o "$APK_DIR/lib/$ABI/libafndle.so" \
   $OBJS \
   -Wl,--start-group \
     "$L/libSDL2.a" "$L/libSDL2_image.a" "$L/libSDL2_ttf.a" \
     "$L/libfreetype.a" "$L/libpng16.a" "$L/libz.a" \
-    "$LIBCXX_STATIC" "$LIBCXX_ABI" "$LIBUNWIND" \
+    "$LIBCXX_STATIC" "${CXX_EXTRA[@]}" \
   -Wl,--end-group \
   -landroid -llog -lm -ldl
 "$STRIP" --strip-unneeded "$APK_DIR/lib/$ABI/libafndle.so"
