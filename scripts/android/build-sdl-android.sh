@@ -141,13 +141,12 @@ run_cmake() {
     "$@"
 }
 
-# Flattens the archive into the prefix, which is what the engine's link line
-# expects: -L<prefix>/lib -l<name>, with no per-subdirectory structure.
-install_lib() {
-  local built="$1" outname="$2"
-  [ -f "$built" ] || die "expected $built to have been built"
-  cp "$built" "$OUT/lib/$outname"
-  say "  $outname  $(du -h "$OUT/lib/$outname" | cut -f1)"
+# Reports an installed archive, so a sub-project that installs somewhere
+# unexpected is caught here rather than at link time.
+expect() {
+  local name="$1"
+  [ -f "$OUT/lib/$name" ] || die "$name was not installed into $OUT/lib"
+  say "  $name  $(du -h "$OUT/lib/$name" | cut -f1)"
 }
 
 # install_header <project> <header> <dest-dir>
@@ -173,7 +172,10 @@ if [ ! -f "$OUT/lib/libz.a" ]; then
     -DCMAKE_BUILD_TYPE=Release -DCMAKE_POSITION_INDEPENDENT_CODE=ON \
     -DZLIB_BUILD_EXAMPLES=OFF >/dev/null
   cmake --build "$BUILD/zlib" >/dev/null
-  install_lib "$BUILD/zlib/libz.a" libz.a
+  # Installed rather than copied so that libpng and SDL2_image can find
+  # zlib through find_package, which needs the installed layout.
+  cmake --install "$BUILD/zlib" --prefix "$OUT" >/dev/null
+  expect libz.a
 fi
 
 # ---------------------------------------------------------------- freetype
@@ -187,11 +189,8 @@ if [ ! -f "$OUT/lib/libfreetype.a" ]; then
     -DFT_DISABLE_PNG=ON -DFT_DISABLE_JPEG=ON -DFT_DISABLE_TIFF=ON \
     -DBUILD_SHARED_LIBS=OFF
   cmake --build "$BUILD/freetype" --target freetype >/dev/null
-  install_lib "$BUILD/freetype/libfreetype.a" libfreetype.a
-  # freetype installs under include/freetype2; match that layout so that
-  # ft2build.h is found by both SDL2_ttf and the engine.
-  rm -rf "$OUT/include/freetype2"
-  cp -r "$DL/freetype/include" "$OUT/include/freetype2"
+  cmake --install "$BUILD/freetype" --prefix "$OUT" >/dev/null
+  expect libfreetype.a
 fi
 
 # ---------------------------------------------------------------- libpng
@@ -205,8 +204,10 @@ if [ ! -f "$OUT/lib/libpng16.a" ]; then
     -DZLIB_INCLUDE_DIR="$OUT/include" \
     -DCMAKE_PREFIX_PATH="$OUT"
   cmake --build "$BUILD/libpng" --target png_static >/dev/null
-  install_lib "$BUILD/libpng/libpng16.a" libpng16.a
-  cp "$DL/libpng/png.h" "$DL/libpng/pngconf.h" "$OUT/include/"
+  # Installed so SDL2_image's find_package(PNG) resolves against a real
+  # config, which is what defines IMG_SavePNG for af_texture_save_png().
+  cmake --install "$BUILD/libpng" --prefix "$OUT" >/dev/null
+  expect libpng16.a
 fi
 
 # ---------------------------------------------------------------- SDL2
@@ -225,16 +226,13 @@ if [ ! -f "$OUT/lib/libSDL2.a" ]; then
     -DSDL_PIPEWIRE=OFF -DSDL_PULSEAUDIO=OFF -DSDL_ALSA=OFF \
     -DSDL_JACK=OFF -DSDL_SNDIO=OFF -DSDL_LIBSYSTEM=OFF
   cmake --build "$BUILD/SDL" --target SDL2-static >/dev/null
-  install_lib "$BUILD/SDL/libSDL2.a" libSDL2.a
-  # The headers go in a subdirectory whatever the source layout is, because
-  # <SDL.h> has to be found via <SDL2/SDL.h> and the engine passes
-  # -I<prefix>/include/SDL2.
-  sdl_h="$(find "$DL/SDL/include" -name SDL.h -type f | head -1)"
-  [ -n "$sdl_h" ] || die "SDL.h not found in the SDL sources"
-  sdl_inc="$(dirname "$sdl_h")"
-  rm -rf "$OUT/include/SDL2"
-  mkdir -p "$OUT/include/SDL2"
-  cp -r "$sdl_inc/." "$OUT/include/SDL2/"
+  # Installed, not copied, and that is the whole point: SDL2_config exports
+  # the SDL2::SDL2-static target, which is what SDL2_ttf and SDL2_image link
+  # against. Copying libSDL2.a and the headers by hand left both of them
+  # unable to find SDL at all.
+  cmake --install "$BUILD/SDL" --prefix "$OUT" >/dev/null
+  expect libSDL2.a
+  [ -d "$OUT/include/SDL2" ] || die "SDL headers did not install into $OUT/include/SDL2"
 fi
 
 # ---------------------------------------------------------------- SDL2_ttf
@@ -248,9 +246,11 @@ if [ ! -f "$OUT/lib/libSDL2_ttf.a" ]; then
     -DSDL2TTF_VENDORED=OFF -DSDL2TTF_HARFBUZZ=OFF \
     -DFREETYPE_LIBRARY="$OUT/lib/libfreetype.a" \
     -DFREETYPE_INCLUDE_DIRS="$OUT/include/freetype2" \
+    -DSDL2_LIBRARY="$OUT/lib/libSDL2.a" \
+    -DSDL2_INCLUDE_DIR="$OUT/include/SDL2" \
     -DCMAKE_PREFIX_PATH="$OUT"
   cmake --build "$BUILD/SDL_ttf" --target SDL2_ttf >/dev/null
-  install_lib "$BUILD/SDL_ttf/libSDL2_ttf.a" libSDL2_ttf.a
+  expect libSDL2_ttf.a
   install_header SDL_ttf SDL_ttf.h "$OUT/include"
 fi
 
@@ -276,9 +276,11 @@ if [ ! -f "$OUT/lib/libSDL2_image.a" ]; then
     -DZLIB_INCLUDE_DIR="$OUT/include" \
     -DPNG_LIBRARY="$OUT/lib/libpng16.a" \
     -DPNG_INCLUDE_DIR="$OUT/include" \
+    -DSDL2_LIBRARY="$OUT/lib/libSDL2.a" \
+    -DSDL2_INCLUDE_DIR="$OUT/include/SDL2" \
     -DCMAKE_PREFIX_PATH="$OUT"
   cmake --build "$BUILD/SDL_image" --target SDL2_image >/dev/null
-  install_lib "$BUILD/SDL_image/libSDL2_image.a" libSDL2_image.a
+  expect libSDL2_image.a
   install_header SDL_image SDL_image.h "$OUT/include"
 fi
 
