@@ -250,7 +250,7 @@ if [ ! -f "$OUT/lib/libSDL2_ttf.a" ]; then
   # dependencies by default once they are found, so name them explicitly.
   run_cmake SDL_ttf \
     -DBUILD_SHARED_LIBS=OFF \
-    -DSDL2TTF_SAMPLES=OFF -DSDL2TTF_TESTS=OFF -DSDL2TTF_INSTALL=OFF \
+    -DSDL2TTF_SAMPLES=OFF -DSDL2TTF_INSTALL=ON \
     -DSDL2TTF_VENDORED=OFF -DSDL2TTF_HARFBUZZ=OFF \
     -DFREETYPE_LIBRARY="$OUT/lib/libfreetype.a" \
     -DFREETYPE_INCLUDE_DIRS="$OUT/include/freetype2" \
@@ -258,6 +258,7 @@ if [ ! -f "$OUT/lib/libSDL2_ttf.a" ]; then
     -DSDL2_INCLUDE_DIR="$OUT/include/SDL2" \
     -DCMAKE_PREFIX_PATH="$OUT"
   cmake --build "$BUILD/SDL_ttf" --target SDL2_ttf >/dev/null
+  cmake --install "$BUILD/SDL_ttf" --prefix "$OUT" >/dev/null
   expect libSDL2_ttf.a
   install_header SDL_ttf SDL_ttf.h "$OUT/include"
 fi
@@ -271,7 +272,7 @@ say "SDL2_image $SDL_IMAGE_VERSION"
 if [ ! -f "$OUT/lib/libSDL2_image.a" ]; then
   run_cmake SDL_image \
     -DBUILD_SHARED_LIBS=OFF \
-    -DSDL2IMAGE_TESTS=OFF -DSDL2IMAGE_SAMPLES=OFF -DSDL2IMAGE_INSTALL=OFF \
+    -DSDL2IMAGE_TESTS=OFF -DSDL2IMAGE_SAMPLES=OFF -DSDL2IMAGE_INSTALL=ON \
     -DSDL2IMAGE_VENDORED=OFF -DSDL2IMAGE_DEPS_SHARED=OFF \
     -DSDL2IMAGE_PNG=ON -DSDL2IMAGE_PNG_SAVE=ON -DSDL2IMAGE_PNG_SHARED=OFF \
     -DSDL2IMAGE_JPG=OFF -DSDL2IMAGE_JPG_SAVE=OFF \
@@ -288,6 +289,7 @@ if [ ! -f "$OUT/lib/libSDL2_image.a" ]; then
     -DSDL2_INCLUDE_DIR="$OUT/include/SDL2" \
     -DCMAKE_PREFIX_PATH="$OUT"
   cmake --build "$BUILD/SDL_image" --target SDL2_image >/dev/null
+  cmake --install "$BUILD/SDL_image" --prefix "$OUT" >/dev/null
   expect libSDL2_image.a
   install_header SDL_image SDL_image.h "$OUT/include"
 fi
