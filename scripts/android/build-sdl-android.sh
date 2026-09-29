@@ -138,6 +138,8 @@ run_cmake() {
     -DANDROID_PLATFORM="android-$API" \
     -DCMAKE_BUILD_TYPE=Release \
     -DCMAKE_POSITION_INDEPENDENT_CODE=ON \
+    -DCMAKE_INSTALL_PREFIX="$OUT" \
+    -DCMAKE_INSTALL_LIBDIR=lib \
     "$@"
 }
 
@@ -170,7 +172,8 @@ if [ ! -f "$OUT/lib/libz.a" ]; then
     -DCMAKE_TOOLCHAIN_FILE="$NDK/build/cmake/android.toolchain.cmake" \
     -DANDROID_ABI="$ABI" -DANDROID_PLATFORM="android-$API" \
     -DCMAKE_BUILD_TYPE=Release -DCMAKE_POSITION_INDEPENDENT_CODE=ON \
-    -DZLIB_BUILD_EXAMPLES=OFF >/dev/null
+    -DCMAKE_INSTALL_PREFIX="$OUT" -DCMAKE_INSTALL_LIBDIR=lib \
+    -DBUILD_SHARED_LIBS=OFF -DZLIB_BUILD_EXAMPLES=OFF >/dev/null
   cmake --build "$BUILD/zlib" >/dev/null
   # Installed rather than copied so that libpng and SDL2_image can find
   # zlib through find_package, which needs the installed layout.
