@@ -118,7 +118,9 @@ STRIP="$HOST_BIN/llvm-strip"
 #                  __gxx_personality_v0 for their exception frames. The
 #                  static runtime is used rather than libc++_shared.so so the
 #                  APK still ships exactly one native library.
-PREBUILT="$(dirname "$(dirname "$HOST_BIN")")"
+# $HOST_BIN is .../llvm/prebuilt/<host>/bin, so one dirname gives the host
+# directory that the sysroot lives under.
+PREBUILT="$(dirname "$HOST_BIN")"
 LIBCXX_STATIC="$PREBUILT/sysroot/usr/lib/$TRIPLE/libc++_static.a"
 [ -f "$LIBCXX_STATIC" ] || die "no libc++_static.a under $PREBUILT/sysroot"
 say "target: $TRIPLE$API"
