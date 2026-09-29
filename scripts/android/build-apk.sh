@@ -183,11 +183,17 @@ OBJS="$OBJS $OUT/obj/test_engine.o"
 
 say "linking libafndle.so"
 L="$SDL_PREFIX/lib"
-# TEMP diagnostic: which archive drags in the C++ runtime?
-for a in "$L/libSDL2.a" "$L/libSDL2_image.a" "$L/libSDL2_ttf.a" \
-         "$L/libfreetype.a" "$L/libpng16.a" "$L/libz.a"; do
-  hit="$("$NM" --undefined-only "$a" 2>/dev/null | grep -E '_Z|__cxa|__gxx_personality' | sort -u)"
-  [ -n "$hit" ] && { echo "== $(basename "$a"):"; echo "$hit"; }
+# TEMP diagnostic: which object inside libSDL2.a references the C++ runtime?
+for a in "$L/libSDL2.a"; do
+  TMPO="$OUT/__member.o"; rm -f "$TMPO"
+  for m in $("$AR" t "$a"); do
+    "$AR" p "$a" "$m" > "$TMPO" 2>/dev/null
+    if "$NM" --undefined-only "$TMPO" 2>/dev/null | grep -qE '_Z|__cxa|__gxx_personality'; then
+      echo "== $m:"
+      "$NM" --undefined-only "$TMPO" 2>/dev/null | grep -E '_Z|__cxa|__gxx_personality' | sed 's/^/   /'
+    fi
+  done
+  rm -f "$TMPO"
 done
 "$CC" -shared -fvisibility=default -o "$APK_DIR/lib/$ABI/libafndle.so" \
   $OBJS \
