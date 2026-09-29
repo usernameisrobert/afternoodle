@@ -129,6 +129,54 @@ unpack freetype   "$GITHUB/freetype/freetype/archive/refs/tags/VER-${Freetype_VE
 unpack zlib       "$GITHUB/madler/zlib/releases/download/v$ZLIB_VERSION/zlib-$ZLIB_VERSION.tar.gz"
 unpack libpng     "$GITHUB/pnggroup/libpng/archive/refs/tags/v$LIBPNG_VERSION.tar.gz"
 
+# SDL2's JNI_OnLoad registers natives on four org/libsdl/app classes. An APK
+# built this way has no SDLActivity and therefore none of them, and each failed
+# FindClass leaves a ClassNotFoundException pending on the thread. ART aborts
+# the process outright if any JNI call is made with an exception pending, and
+# JNI_OnLoad makes four FindClass calls in a row, so the second one kills the
+# app the moment System.loadLibrary runs: it installs, launches, and dies with
+# no Activity and no log line. Clearing the exception lets the load finish and
+# leaves SDL's mJavaVM set, which is the one thing this JNI_OnLoad is actually
+# needed for here.
+#
+# Upstream takes the class's presence for granted, so the failure is not
+# handled. This is the minimal change that makes SDL loadable without its own
+# Java glue, and it is deliberately confined to the error branch: when the
+# classes do exist, nothing here runs and registration behaves as before.
+patch_sdl_android_exception() {
+  local f="$DL/SDL/src/core/android/SDL_android.c"
+  [ -f "$f" ] || die "SDL patch: no $f"
+  # Already applied: the source tree can be reused across builds.
+  if grep -q 'afternoodle: cleared a pending' "$f"; then
+    return 0
+  fi
+
+  python3 - "$f" <<'PATCH' || die "SDL patch: register_methods no longer looks the way this patch expects; re-apply it by hand for SDL $SDL_VERSION"
+import sys
+path = sys.argv[1]
+src = open(path).read()
+anchor = '''    if (!clazz || (*env)->RegisterNatives(env, clazz, methods, nb) < 0) {
+        __android_log_print(ANDROID_LOG_ERROR, "SDL", "Failed to register methods of %s", classname);
+        return;
+    }'''
+fixed = '''    if (!clazz || (*env)->RegisterNatives(env, clazz, methods, nb) < 0) {
+        /* afternoodle: cleared a pending ClassNotFoundException. This APK has
+           no SDLActivity, so the class is absent by design, and leaving the
+           exception pending aborts the process on the next JNI call. */
+        if ((*env)->ExceptionCheck(env)) {
+            (*env)->ExceptionClear(env);
+        }
+        __android_log_print(ANDROID_LOG_ERROR, "SDL", "Failed to register methods of %s", classname);
+        return;
+    }'''
+if src.count(anchor) != 1:
+    sys.exit("anchor found %d times, expected 1" % src.count(anchor))
+open(path, "w").write(src.replace(anchor, fixed))
+print("    patched %s: clear pending exception in register_methods" % path)
+PATCH
+}
+patch_sdl_android_exception
+
 # Every sub-project is an Android static build.
 run_cmake() {
   local name="$1"; shift

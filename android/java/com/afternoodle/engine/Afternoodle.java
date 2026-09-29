@@ -18,8 +18,13 @@ package com.afternoodle.engine;
 public final class Afternoodle {
 
     static {
-        // Packed into lib/arm64-v8a/libafndle.so by the APK build.
-        System.loadLibrary("afternoodle");
+        // Packed into lib/arm64-v8a/libafndle.so by the APK build. The name
+        // must be the .so's own name, with no "lib" prefix and no ".so"
+        // suffix: the linker name afndle is what the engine is called
+        // everywhere else, and a mismatch here is an UnsatisfiedLinkError the
+        // first time this class initialises, which is on a worker thread, so
+        // it takes the whole app down rather than failing visibly.
+        System.loadLibrary("afndle");
     }
 
     private Afternoodle() {
