@@ -34,6 +34,16 @@ public final class Afternoodle {
     public static native String nativeVersion();
 
     /**
+     * Gives the engine its writable directory.
+     *
+     * <p>Call this once with {@link android.content.Context#getFilesDir()}
+     * before any engine call that touches files (the self test, loading or
+     * saving images). The engine resolves relative paths against it, so no
+     * SDLActivity is needed to resolve file locations.
+     */
+    public static native void nativeSetDataDir(String dir);
+
+    /**
      * Runs the engine's own check suite, the same binary the makefiles build
      * and CI runs.
      *

@@ -37,6 +37,7 @@ public final class MainActivity extends Activity {
     protected void onCreate(Bundle saved) {
         super.onCreate(saved);
         setTitle("afternoodle");
+        Afternoodle.nativeSetDataDir(getFilesDir().getAbsolutePath());
 
         LinearLayout root = new LinearLayout(this);
         root.setOrientation(LinearLayout.VERTICAL);

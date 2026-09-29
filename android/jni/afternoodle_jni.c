@@ -111,6 +111,25 @@ Java_com_afternoodle_engine_Afternoodle_nativeVersion(JNIEnv *env, jclass cls) {
 }
 
 /* --------------------------------------------------------------------------
+ *  data dir
+ * -------------------------------------------------------------------------- */
+
+/* Give the engine a writable directory before it starts. The engine resolves
+ * relative paths against this (see af_platform_set_data_dir), keeping file
+ * I/O away from SDL's Android internal-storage path, which can only be
+ * derived from an SDLActivity. */
+AFNDLE_JNI void JNICALL
+Java_com_afternoodle_engine_Afternoodle_nativeSetDataDir(JNIEnv *env, jclass cls,
+                                                         jstring dir) {
+    (void)cls;
+    if (!dir) return;
+    const char *s = (*env)->GetStringUTFChars(env, dir, NULL);
+    if (!s) return;
+    af_platform_set_data_dir(s);
+    (*env)->ReleaseStringUTFChars(env, dir, s);
+}
+
+/* --------------------------------------------------------------------------
  *  self test
  * -------------------------------------------------------------------------- */
 

@@ -147,7 +147,19 @@ static struct {
     int   game_event_filter;
     char  app_name[64];
     char  last_clipboard[2048];
+    char  data_dir[1024];
 } g_plat;
+
+void af_platform_set_data_dir(const char *dir) {
+    g_plat.data_dir[0] = '\0';
+    if (dir && *dir) {
+        af_str_cpy_max(af_str(dir), g_plat.data_dir, (int)sizeof(g_plat.data_dir));
+        /* Create it up front so later saves never race on missing parents. */
+        af_fs_mkdirs(g_plat.data_dir);
+    }
+}
+
+const char *af_platform_data_dir(void) { return g_plat.data_dir; }
 
 int af_platform_stdout_is_tty(void) {
 #if defined(AF_OS_WINDOWS)

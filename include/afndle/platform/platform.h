@@ -313,6 +313,14 @@ AF_API void        af_clipboard_set(AfStr text);
 AF_API AfStrBuf    af_clipboard_get(void); /* caller frees with af_strbuf_free */
 
 /* ============================================================ subsystems */
+/* Writable directory the host hands the engine for runtime files. Empty
+ * unless set, in which case relative paths stay relative and resolve against
+ * the working directory. Android hosts set it through the JNI bridge so
+ * relative paths can be made absolute without touching SDL's Android file I/O
+ * (which would need an SDLActivity to derive getFilesDir()). */
+void         af_platform_set_data_dir(const char* dir);
+const char*  af_platform_data_dir(void);
+
 AF_API void af_platform_init(const char* app_name);
 AF_API void af_platform_shutdown(void);
 AF_API int  af_platform_video_init(void);

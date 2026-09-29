@@ -19,6 +19,7 @@
 #include "afndle/core/str.h"
 #include "afndle/core/time.h"
 #include "afndle/platform/platform.h"
+#include "afndle/platform/platform.h"
 #include "afndle/render/render.h"
 
 #define AF_SPRITE_MAX 65536
@@ -106,6 +107,17 @@ AfTexture *af_texture_create(const void *data, int w, int h, int pitch,
 
 AfTexture *af_texture_load_ex(const char *path, AfTextureFilter filter, int repeat) {
     if (!path || !*path) return NULL;
+
+    /* On hosts with a data dir, relative paths are resolved against it so
+     * file I/O never falls through to SDL's Android internal-storage path
+     * (which needs an SDLActivity). Desktop has no data dir, so nothing
+     * changes there. */
+    char resolved[1024];
+    const char *data = af_platform_data_dir();
+    if (data && *data && !af_fs_is_absolute(path)) {
+        af_fs_path_join(data, path, resolved, (int)sizeof(resolved));
+        path = resolved;
+    }
 
     SDL_Renderer *cur = tex_renderer();
     unsigned h = tex_hash(path, cur);
@@ -282,6 +294,12 @@ int af_texture_save_png(AfTexture *t, const char *path) {
     if (!s) {
         AF_WARN("could not read back texture for '%s'", path);
         return 0;
+    }
+    char resolved[1024];
+    const char *data = af_platform_data_dir();
+    if (data && *data && !af_fs_is_absolute(path)) {
+        af_fs_path_join(data, path, resolved, (int)sizeof(resolved));
+        path = resolved;
     }
     int ok = IMG_SavePNG(s, path) == 0;
     if (!ok) AF_WARN("could not write '%s': %s", path, IMG_GetError());
