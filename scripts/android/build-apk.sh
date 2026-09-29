@@ -106,6 +106,21 @@ CC="$HOST_BIN/${TRIPLE}${API}-clang"
 AR="$HOST_BIN/llvm-ar"
 STRIP="$HOST_BIN/llvm-strip"
 [ -x "$CC" ] || die "no NDK compiler $CC"
+
+# The statically linked SDL stack leaves two references that have to be
+# satisfied at load time, and neither is obvious from the link line:
+#
+#   libandroid.so  SDL2's Android backend uses ANativeWindow_*, ALooper_*,
+#                  AAsset* and ASensor*, none of which are in libc. Without
+#                  the DT_NEEDED entry the library fails to load with
+#                  "cannot locate symbol ANativeWindow_fromSurface".
+#   libc++_static  Some objects in the stack reference operator new[] and
+#                  __gxx_personality_v0 for their exception frames. The
+#                  static runtime is used rather than libc++_shared.so so the
+#                  APK still ships exactly one native library.
+PREBUILT="$(dirname "$(dirname "$HOST_BIN")")"
+LIBCXX_STATIC="$PREBUILT/sysroot/usr/lib/$TRIPLE/libc++_static.a"
+[ -f "$LIBCXX_STATIC" ] || die "no libc++_static.a under $PREBUILT/sysroot"
 say "target: $TRIPLE$API"
 
 # ------------------------------------------------------------------ clean
@@ -149,7 +164,8 @@ L="$SDL_PREFIX/lib"
     "$L/libSDL2.a" "$L/libSDL2_image.a" "$L/libSDL2_ttf.a" \
     "$L/libfreetype.a" "$L/libpng16.a" "$L/libz.a" \
   -Wl,--end-group \
-  -llog -lm -ldl
+  "$LIBCXX_STATIC" \
+  -landroid -llog -lm -ldl
 "$STRIP" --strip-unneeded "$APK_DIR/lib/$ABI/libafndle.so"
 say "  libafndle.so $(du -h "$APK_DIR/lib/$ABI/libafndle.so" | cut -f1)"
 
@@ -157,6 +173,45 @@ say "  libafndle.so $(du -h "$APK_DIR/lib/$ABI/libafndle.so" | cut -f1)"
 if command -v readelf >/dev/null 2>&1; then
   echo "  native deps:"
   readelf -d "$APK_DIR/lib/$ABI/libafndle.so" | grep NEEDED | sed 's/^/    /'
+fi
+
+# An unresolved symbol is a load-time failure on the device, not a link-time
+# one: the linker is satisfied as soon as a DT_NEEDED exists, whether or not
+# the library behind it exports what was asked for. So every undefined symbol
+# is checked against the libraries the .so actually depends on, and a gap
+# fails the build here instead of producing an APK that cannot be loaded.
+if command -v nm >/dev/null 2>&1; then
+  SO="$APK_DIR/lib/$ABI/libafndle.so"
+  # nm prints undefined symbols as "  U NAME" and defined ones as
+  # "ADDR T NAME", so the name is field 2 in one case and field 3 in the other.
+  nm -D --undefined-only "$SO" | awk 'NF>=2{print $NF}' | sed 's/@.*//' \
+    | sort -u > "$OUT/undef.txt"
+
+  found=0
+  for lib in $(readelf -d "$SO" | grep NEEDED | sed -n 's/.*\[\(.*\)\].*/\1/p'); do
+    case "$lib" in
+      libc.so)        path="/system/lib64/$lib" ;;
+      liblog.so|libm.so|libdl.so|libandroid.so) path="/system/lib64/$lib" ;;
+      *)              continue ;;
+    esac
+    # Not present in the build container, which is not Android; skip quietly.
+    [ -f "$path" ] || continue
+    nm -D --defined-only "$path" 2>/dev/null | awk 'NF>=3{print $NF}' \
+      | sed 's/@.*//' | sort -u >> "$OUT/provided.txt"
+    found=$((found + 1))
+  done
+  if [ "$found" -eq 0 ]; then
+    say "  (no system libraries to check against; skipping)"
+  else
+    sort -u "$OUT/provided.txt" -o "$OUT/provided.txt"
+    missing="$(comm -23 "$OUT/undef.txt" "$OUT/provided.txt" || true)"
+    if [ -n "$missing" ]; then
+      printf 'error: libafndle.so has undefined symbols no dependency provides:\n' >&2
+      printf '  %s\n' $missing >&2
+      die "these would fail to resolve when the library is loaded"
+    fi
+    say "  all $(wc -l < "$OUT/undef.txt") undefined symbols resolve"
+  fi
 fi
 
 # ------------------------------------------------------------------ java
