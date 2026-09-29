@@ -175,7 +175,53 @@ open(path, "w").write(src.replace(anchor, fixed))
 print("    patched %s: clear pending exception in register_methods" % path)
 PATCH
 }
+# Same class of problem one call further in: when fopen() misses (a file not
+# found, not a failure to open an existing one), SDL_RWFromFile falls through
+# to Android_JNI_FileOpen, which builds NDK's asset manager from the Activity.
+# Without an SDLActivity, mActivityClass stays NULL and the call dies with an
+# empty jmethodID in CallStaticObjectMethod -- an abort, not a NULL return.
+# Guarding the create call keeps a plain missing file a plain missing file.
+patch_sdl_android_noactivity() {
+  local f="$DL/SDL/src/core/android/SDL_android.c"
+  [ -f "$f" ] || die "SDL patch: no $f"
+  # Already applied: the source tree can be reused across builds.
+  if grep -q 'afternoodle: no SDLActivity' "$f"; then
+    return 0
+  fi
+
+  python3 - "$f" <<'PATCH' || die "SDL patch: Android_JNI_FileOpen no longer looks the way this patch expects; re-apply it by hand for SDL $SDL_VERSION"
+import sys
+path = sys.argv[1]
+src = open(path).read()
+anchor = '''    if (!asset_manager) {
+        Internal_Android_Create_AssetManager();
+    }
+
+    if (!asset_manager) {
+        return SDL_SetError("Couldn't create asset manager");
+    }'''
+fixed = '''    if (!asset_manager) {
+        /* afternoodle: no SDLActivity means mActivityClass is NULL forever,
+           so Internal_Android_Create_AssetManager() dies with an empty
+           jmethodID in CallStaticObjectMethod. No assets can exist without
+           the Activity, so fail like an ordinary missing file. */
+        if (!mActivityClass) {
+            return SDL_SetError("Couldn't create asset manager (no SDLActivity)");
+        }
+        Internal_Android_Create_AssetManager();
+    }
+
+    if (!asset_manager) {
+        return SDL_SetError("Couldn't create asset manager");
+    }'''
+if src.count(anchor) != 1:
+    sys.exit("anchor found %d times, expected 1" % src.count(anchor))
+open(path, "w").write(src.replace(anchor, fixed))
+print("    patched %s: guard asset-manager create on no SDLActivity" % path)
+PATCH
+}
 patch_sdl_android_exception
+patch_sdl_android_noactivity
 
 # Every sub-project is an Android static build.
 run_cmake() {

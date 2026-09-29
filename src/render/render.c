@@ -111,12 +111,14 @@ AfTexture *af_texture_load_ex(const char *path, AfTextureFilter filter, int repe
     /* On hosts with a data dir, relative paths are resolved against it so
      * file I/O never falls through to SDL's Android internal-storage path
      * (which needs an SDLActivity). Desktop has no data dir, so nothing
-     * changes there. */
+     * changes there. The original path stays the cache key and what
+     * af_texture_path() reports; only the file open uses the resolved one. */
+    const char *open_path = path;
     char resolved[1024];
     const char *data = af_platform_data_dir();
     if (data && *data && !af_fs_is_absolute(path)) {
         af_fs_path_join(data, path, resolved, (int)sizeof(resolved));
-        path = resolved;
+        open_path = resolved;
     }
 
     SDL_Renderer *cur = tex_renderer();
@@ -128,7 +130,7 @@ AfTexture *af_texture_load_ex(const char *path, AfTextureFilter filter, int repe
         }
     }
 
-    SDL_Surface *surf = IMG_Load(path);
+    SDL_Surface *surf = IMG_Load(open_path);
     if (!surf) {
         AF_WARN("could not load image '%s': %s", path, IMG_GetError());
         return NULL;
