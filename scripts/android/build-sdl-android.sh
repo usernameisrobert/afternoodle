@@ -276,7 +276,15 @@ if [ ! -f "$OUT/lib/libSDL2.a" ]; then
     -DSDL_VIDEO=ON -DSDL_AUDIO=OFF \
     -DSDL_OPENGL=OFF -DSDL_OPENGLES=OFF -DSDL_VULKAN=OFF \
     -DSDL_PIPEWIRE=OFF -DSDL_PULSEAUDIO=OFF -DSDL_ALSA=OFF \
-    -DSDL_JACK=OFF -DSDL_SNDIO=OFF -DSDL_LIBSYSTEM=OFF
+    -DSDL_JACK=OFF -DSDL_SNDIO=OFF -DSDL_LIBSYSTEM=OFF \
+    -DSDL_HIDAPI=OFF
+  # HIDAPI is SDL's bundled gamepad backend, and its src/hidapi/hid.cpp is the
+  # one C++ translation unit in the whole stack. Nothing here reads joysticks,
+  # so it is dead code, but leaving it in drags operator new/delete,
+  # std::terminate and the personality frames into the link, and NDK 27 no
+  # longer ships libc++abi.a and libunwind.a for the linker to satisfy them
+  # with. The engine uses only the dummy video driver, so no HIDAPI or
+  # virtual-joystick code is wanted in libafndle.so at all.
   # SDL2main is disabled above: it redefines main() to call SDL_main(), which
   # would collide with the engine's own main(), and an Android app enters
   # through JNI_OnLoad rather than main() in any case. Disabling it also stops

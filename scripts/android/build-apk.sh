@@ -183,18 +183,6 @@ OBJS="$OBJS $OUT/obj/test_engine.o"
 
 say "linking libafndle.so"
 L="$SDL_PREFIX/lib"
-# TEMP diagnostic: which object inside libSDL2.a references the C++ runtime?
-for a in "$L/libSDL2.a"; do
-  TMPO="$OUT/__member.o"; rm -f "$TMPO"
-  for m in $("$AR" t "$a"); do
-    "$AR" p "$a" "$m" > "$TMPO" 2>/dev/null
-    if "$NM" --undefined-only "$TMPO" 2>/dev/null | grep -qE '_Z|__cxa|__gxx_personality'; then
-      echo "== $m:"
-      "$NM" --undefined-only "$TMPO" 2>/dev/null | grep -E '_Z|__cxa|__gxx_personality' | sed 's/^/   /'
-    fi
-  done
-  rm -f "$TMPO"
-done
 "$CC" -shared -fvisibility=default -o "$APK_DIR/lib/$ABI/libafndle.so" \
   $OBJS \
   -Wl,--start-group \
