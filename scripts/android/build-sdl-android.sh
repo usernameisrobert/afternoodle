@@ -222,12 +222,17 @@ if [ ! -f "$OUT/lib/libSDL2.a" ]; then
   run_cmake SDL \
     -DSDL_SHARED=OFF -DSDL_STATIC=ON -DSDL_STATIC_PIC=ON \
     -DSDL_TEST=OFF -DSDL_TESTS=OFF -DSDL_INSTALL_TESTS=OFF \
+    -DSDL2_DISABLE_SDL2MAIN=ON \
     -DSDL_X11=OFF -DSDL_WAYLAND=OFF -DSDL_KMSDRM=OFF -DSDL_OFFSCREEN=OFF \
     -DSDL_DUMMYVIDEO=ON \
     -DSDL_VIDEO=ON -DSDL_AUDIO=OFF \
     -DSDL_OPENGL=OFF -DSDL_OPENGLES=OFF -DSDL_VULKAN=OFF \
     -DSDL_PIPEWIRE=OFF -DSDL_PULSEAUDIO=OFF -DSDL_ALSA=OFF \
     -DSDL_JACK=OFF -DSDL_SNDIO=OFF -DSDL_LIBSYSTEM=OFF
+  # SDL2main is disabled above: it redefines main() to call SDL_main(), which
+  # would collide with the engine's own main(), and an Android app enters
+  # through JNI_OnLoad rather than main() in any case. Disabling it also stops
+  # the install step looking for a libSDL2main.a that this build never makes.
   cmake --build "$BUILD/SDL" --target SDL2-static >/dev/null
   # Installed, not copied, and that is the whole point: SDL2_config exports
   # the SDL2::SDL2-static target, which is what SDL2_ttf and SDL2_image link
