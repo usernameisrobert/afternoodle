@@ -194,10 +194,12 @@ jobs:
           mkdir -p release
           for d in artifacts/afternoodle-*/; do
             name="$(basename "$d")"
+            # The Android artifact is a bare APK, added below as-is. Wrapping
+            # a zip in a tarball helps nobody.
+            [ "$name" = "afternoodle-android-arm64" ] && continue
             tar czf "release/${name}.tar.gz" -C "$d" .
             echo "  ${name}.tar.gz"
           done
-          # The APK goes up as-is; wrapping a zip in a tarball helps nobody.
           for a in artifacts/afternoodle-android-arm64/*.apk; do
             [ -e "$a" ] || continue
             cp "$a" release/
