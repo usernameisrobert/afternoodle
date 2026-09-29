@@ -25,6 +25,7 @@
 
 #include <android/log.h>
 #include <SDL.h>
+#include <SDL_main.h>
 
 #include "afndle/core/afconfig.h"
 #include "afndle/core/log.h"
@@ -70,6 +71,12 @@ static int ensure_engine(void) {
      * too late. */
     if (!SDL_getenv("SDL_VIDEODRIVER")) SDL_setenv("SDL_VIDEODRIVER", "dummy", 1);
     if (!SDL_getenv("SDL_AUDIODRIVER")) SDL_setenv("SDL_AUDIODRIVER", "dummy", 1);
+
+    /* Tell SDL there is no SDL_main() to call. An ordinary Android app has no
+     * SDLActivity, so SDL's own glue never runs checkJNIReady() and never
+     * calls this; without it SDL_Init fails for every video driver with
+     * "did you include SDL_main.h in the file containing your main()". */
+    SDL_SetMainReady();
 
     af_log_init(AF_LOG_DEBUG, 0 /* no ANSI colour in logcat */);
     af_log_add_sink(log_to_logcat, NULL);
